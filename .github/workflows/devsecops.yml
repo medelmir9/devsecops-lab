@@ -1,58 +1,40 @@
 name: DevSecOps Pipeline
 on:
-push:
-branches: [ &quot;main&quot; ]
+  push:
+    branches: [ "main" ]
 jobs:
-devsecops:
-runs-on: ubuntu-latest
-steps:
-- uses: actions/checkout@v3
-############################################
-# 1. Analyse SonarQube
-############################################
-- name: Set up JDK (required by Sonar)
-uses: actions/setup-java@v3
-with:
-distribution: &#39;temurin&#39;
-java-version: &#39;17&#39;
-- name: SonarQube scan
-uses: sonarsource/sonarqube-scan-action@v2
-with:
-
-args: &gt;
--Dsonar.projectKey=devsecops-lab
--Dsonar.sources=./api
-env:
-SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-SONAR_HOST_URL: &quot;http://YOUR_SONAR_IP:9000&quot;
-############################################
-# 2. Analyse SAST CodeQL
-############################################
-- name: Init CodeQL
-uses: github/codeql-action/init@v3
-with:
-languages: python
-- name: Run CodeQL
-uses: github/codeql-action/analyze@v3
-############################################
-# 3. Analyse sécurité Python avec Bandit
-############################################
-- name: Install Bandit
-run: pip install bandit
-- name: Run Bandit
-run: bandit -r api --severity-level high
-############################################
-# 4. Build Docker
-############################################
-- name: Build Docker image
-run: docker build -t devsecops-api ./docker
-############################################
-# 5. Scan Docker avec Trivy
-############################################
-- name: Trivy Scan
-uses: aquasecurity/trivy-action@master
-with:
-scan-type: image
-image-ref: devsecops-api
-severity: CRITICAL,HIGH
-exit-code: 1
+  devsecops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        ############################################
+        # 1. Analyse SAST CodeQL
+        ############################################
+      - name: Init CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - name: Run CodeQL
+        uses: github/codeql-action/analyze@v3
+        ############################################
+        # 2. Analyse sécurité Python avec Bandit
+        ############################################
+      - name: Install Bandit
+        run: pip install bandit
+      - name: Run Bandit
+        run: bandit -r api --severity-level high
+        ############################################
+        # 3. Build Docker
+        ############################################
+      - name: Build Docker image
+        run: docker build -t devsecops-api ./docker
+        ############################################
+        # 4. Scan Docker avec Trivy
+        ############################################
+      - name: Trivy Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: devsecops-api
+          severity: CRITICAL,HIGH
+          exit-code: 1
