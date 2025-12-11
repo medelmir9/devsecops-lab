@@ -11,14 +11,11 @@ def login():
     username = request.json.get("username")
     password = request.json.get("password")
 
-
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-
     query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
     cursor.execute(query)
-
 
     result = cursor.fetchone()
     if result:
@@ -29,7 +26,6 @@ def ping():
     host = request.json.get("host", "")
     cmd = f"ping -c 1 {host}"
     output = subprocess.check_output(cmd, shell=True)
-
 
     return {"output": output.decode()}
 @app.route("/compute", methods=["POST"])
@@ -47,7 +43,6 @@ def readfile():
     filename = request.json.get("filename", "test.txt")
     with open(filename, "r") as f:
         content = f.read()
-
 
     return {"content": content}
 @app.route("/debug", methods=["GET"])
