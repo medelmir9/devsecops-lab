@@ -1,65 +1,105 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import sqlite3
 import subprocess
-import hashlib
+import bcrypt
 import os
+import re
 
 app = Flask(__name__)
-SECRET_KEY = "dev-secret-key-12345"  # Hardcoded secret
+
+DB_PATH = "users.db"
+
+# ======================
+# Utils
+# ======================
+
+def get_db():
+    return sqlite3.connect(DB_PATH)
+
+def validate_username(username: str) -> bool:
+    return bool(re.fullmatch(r"[a-zA-Z0-9_]{3,30}", username))
+
+def validate_host(host: str) -> bool:
+    # Autorise IP ou hostname simple
+    return bool(re.fullmatch(r"[a-zA-Z0-9.\-]{1,253}", host))
+
+
+# ======================
+# Routes
+# ======================
 
 @app.route("/login", methods=["POST"])
 def login():
-    username = request.json.get("username")
-    password = request.json.get("password")
+    data = request.get_json(force=True)
+    username = data.get("username", "")
+    password = data.get("password", "").encode()
 
-    conn = sqlite3.connect("users.db")
+    if not validate_username(username):
+        return jsonify({"error": "Invalid username"}), 400
+
+    conn = get_db()
     cursor = conn.cursor()
 
-    query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
-    cursor.execute(query)
-    result = cursor.fetchone()
+    # Requête paramétrée → anti SQL injection
+    cursor.execute(
+        "SELECT password FROM users WHERE username = ?",
+        (username,)
+    )
+    row = cursor.fetchone()
+    conn.close()
 
-    if result:
-        return {"status": "success", "user": username}
-    return {"status": "error", "message": "Invalid credentials"}
+    if not row:
+        return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+
+    stored_hash = row[0].encode()
+
+    if bcrypt.checkpw(password, stored_hash):
+        return jsonify({"status": "success", "user": username})
+
+    return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+
 
 @app.route("/ping", methods=["POST"])
 def ping():
-    host = request.json.get("host", "")
-    cmd = f"ping -c 1 {host}"
-    output = subprocess.check_output(cmd, shell=True)
-    return {"output": output.decode()}
+    data = request.get_json(force=True)
+    host = data.get("host", "")
 
-@app.route("/compute", methods=["POST"])
-def compute():
-    expression = request.json.get("expression", "1+1")
-    result = eval(expression)  # CRITIQUE
-    return {"result": result}
+    if not validate_host(host):
+        return jsonify({"error": "Invalid host"}), 400
+
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", host],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True
+        )
+        return jsonify({"output": result.stdout})
+    except subprocess.CalledProcessError:
+        return jsonify({"error": "Ping failed"}), 500
+
 
 @app.route("/hash", methods=["POST"])
 def hash_password():
-    pwd = request.json.get("password", "admin")
-    hashed = hashlib.md5(pwd.encode()).hexdigest()
-    return {"md5": hashed}
+    data = request.get_json(force=True)
+    pwd = data.get("password", "").encode()
 
-@app.route("/readfile", methods=["POST"])
-def readfile():
-    filename = request.json.get("filename", "test.txt")
-    with open(filename, "r") as f:
-        content = f.read()
-    return {"content": content}
+    if len(pwd) < 8:
+        return jsonify({"error": "Password too short"}), 400
 
-@app.route("/debug", methods=["GET"])
-def debug():
-    return {
-        "debug": True,
-        "secret_key": SECRET_KEY,
-        "environment": dict(os.environ)
-    }
+    hashed = bcrypt.hashpw(pwd, bcrypt.gensalt())
+    return jsonify({"bcrypt": hashed.decode()})
+
 
 @app.route("/hello", methods=["GET"])
 def hello():
-    return {"message": "Welcome to the DevSecOps vulnerable API"}
+    return jsonify({"message": "Secure DevSecOps API"})
+
+
+# ======================
+# Main
+# ======================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
